@@ -1,11 +1,5 @@
-"""
-Diamond Edge — Flask Web Server
-Runs on Render.com (free tier)
-Serves the frontend and provides API endpoints for stats + AI predictions
-"""
-
 from flask import Flask, jsonify, request, send_from_directory
-import requests, os, warnings, json
+import requests, os, warnings, json, re
 from datetime import datetime
 import pandas as pd
 
@@ -18,9 +12,9 @@ try:
 except Exception:
     PYBASEBALL_OK = False
 
-app = Flask(__name__, static_folder="static")
+app = Flask(__name__, static_folder="Static")
 
-ODDS_API_KEY  = os.environ.get("ODDS_API_KEY", "5a5e898df52b4c54e1535b5ee8db8a4b")
+ODDS_API_KEY  = os.environ.get("ODDS_API_KEY",  "5a5e898df52b4c54e1535b5ee8db8a4b")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 TEAM_MAP = {
@@ -96,7 +90,7 @@ def team_batting(kw, bat_df):
     if t.empty: return {}
     AB=num(t["AB"]).sum(); H=num(t["H"]).sum()
     BB=num(t["BB"]).sum(); HR=num(t["HR"]).sum()
-    R=num(t["R"]).sum();   SO=num(t["SO"]).sum()
+    R=num(t["R"]).sum(); SO=num(t["SO"]).sum()
     RBI=num(t["RBI"]).sum()
     out = {}
     if AB > 0:
@@ -113,7 +107,7 @@ def team_pitching(kw, pit_df):
     if t.empty: return {}
     ip=num(t["IP"]).fillna(0); era=num(t["ERA"]).fillna(0)
     whip=num(t["WHIP"]).fillna(0); so=num(t["SO"]).fillna(0)
-    bb=num(t["BB"]).fillna(0);  hr=num(t["HR"]).fillna(0)
+    bb=num(t["BB"]).fillna(0); hr=num(t["HR"]).fillna(0)
     tip = ip.sum()
     if tip == 0: return {}
     return {
@@ -157,7 +151,9 @@ def get_odds(home, away):
             "apiKey": ODDS_API_KEY, "regions": "us",
             "markets": "h2h,spreads,totals", "oddsFormat": "american"
         }, timeout=10)
-        if r.status_code != 200: return {}
+        if r.status_code != 200:
+            print(f"Odds API error: {r.status_code} {r.text[:200]}")
+            return {}
         games = r.json()
         def match(n, team):
             return team.split()[-1].lower() in n.lower() or team.lower() in n.lower()
@@ -171,8 +167,7 @@ def get_odds(home, away):
         result = {"bookmaker": book["title"]}
         for mkt in book.get("markets", []):
             for o in mkt.get("outcomes", []):
-                k = mkt["key"]
-                n = o["name"]
+                k = mkt["key"]; n = o["name"]
                 if k == "h2h":
                     if match(n, home): result["home_ml"] = o["price"]
                     elif match(n, away): result["away_ml"] = o["price"]
@@ -187,28 +182,65 @@ def get_odds(home, away):
         print(f"Odds error: {e}")
         return {}
 
+# ── Routes ──────────────────────────────────────────────────────────────────
+
 @app.route("/")
 def index():
-    return send_from_directory("static", "index.html")
+    return send_from_directory("Static", "index.html")
+
+@app.route("/api/health")
+def health():
+    return jsonify({
+        "status": "ok",
+        "anthropic_key_set": bool(ANTHROPIC_KEY),
+        "odds_key": ODDS_API_KEY[:8] + "...",
+        "pybaseball": PYBASEBALL_OK,
+    })
 
 @app.route("/api/games")
 def api_games():
     try:
         r = requests.get("https://api.the-odds-api.com/v4/sports/baseball_mlb/odds", params={
-            "apiKey": ODDS_API_KEY, "regions": "us", "markets": "h2h", "oddsFormat": "american"
+            "apiKey": ODDS_API_KEY, "regions": "us",
+            "markets": "h2h", "oddsFormat": "american"
         }, timeout=10)
-        if r.status_code != 200: return jsonify([])
+        print(f"Odds API status: {r.status_code}, remaining: {r.headers.get('x-requests-remaining','?')}")
+        if r.status_code != 200:
+            print(f"Odds API body: {r.text[:300]}")
+            return jsonify([])
+        data = r.json()
         games = []
-        for g in r.json():
+        for g in data:
             ct = g.get("commence_time","")
+            # parse time to ET
+            try:
+                from datetime import timezone, timedelta
+                dt = datetime.strptime(ct, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                et = dt.astimezone(timezone(timedelta(hours=-4)))
+                time_str = et.strftime("%-I:%M %p ET")
+            except:
+                time_str = ct[11:16] + " UTC" if ct else "TBD"
+
+            # get moneyline from first bookmaker
+            ml_home = ml_away = None
+            for bk in g.get("bookmakers", [])[:1]:
+                for mkt in bk.get("markets", []):
+                    if mkt["key"] == "h2h":
+                        for o in mkt["outcomes"]:
+                            if o["name"] == g["home_team"]: ml_home = o["price"]
+                            elif o["name"] == g["away_team"]: ml_away = o["price"]
+
             games.append({
-                "id": g["id"],
-                "home": g["home_team"],
-                "away": g["away_team"],
-                "time": ct[11:16] + " UTC" if ct else "TBD",
+                "id":      g["id"],
+                "home":    g["home_team"],
+                "away":    g["away_team"],
+                "time":    time_str,
+                "ml_home": f"{ml_home:+d}" if ml_home else "",
+                "ml_away": f"{ml_away:+d}" if ml_away else "",
             })
         return jsonify(games)
     except Exception as e:
+        print(f"Games error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/stats")
@@ -227,17 +259,17 @@ def api_stats():
     data = {
         "home": {
             "name": home, "abbr": home_abbr,
-            "record": get_record(home_abbr, year),
-            "batting": team_batting(home_kw, bat_df),
+            "record":   get_record(home_abbr, year),
+            "batting":  team_batting(home_kw, bat_df),
             "pitching": team_pitching(home_kw, pit_df),
-            "sp": pitcher_stats(hpit, pit_df),
+            "sp":       pitcher_stats(hpit, pit_df),
         },
         "away": {
             "name": away, "abbr": away_abbr,
-            "record": get_record(away_abbr, year),
-            "batting": team_batting(away_kw, bat_df),
+            "record":   get_record(away_abbr, year),
+            "batting":  team_batting(away_kw, bat_df),
             "pitching": team_pitching(away_kw, pit_df),
-            "sp": pitcher_stats(apit, pit_df),
+            "sp":       pitcher_stats(apit, pit_df),
         },
         "odds": get_odds(home, away),
     }
@@ -245,7 +277,10 @@ def api_stats():
 
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
-    body = request.json or {}
+    if not ANTHROPIC_KEY:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set in Railway environment variables"}), 500
+
+    body    = request.json or {}
     home    = body.get("home","")
     away    = body.get("away","")
     bet     = body.get("betType","Moneyline (Winner)")
@@ -258,18 +293,26 @@ def api_predict():
     def fmt_stats(s, name):
         lines = [f"{name}:"]
         lines.append(f"  Record: {s.get('record','N/A')}")
-        if s.get('batting'): lines += [f"  {k}: {v}" for k,v in s['batting'].items()]
-        if s.get('pitching'): lines += [f"  Staff {k}: {v}" for k,v in s['pitching'].items()]
-        if s.get('sp'): lines += [f"  SP ({s['sp'].get('Name','')}): ERA {s['sp'].get('ERA','?')}, WHIP {s['sp'].get('WHIP','?')}, K/9 {s['sp'].get('SO9',s['sp'].get('SO','?'))}"]
+        bat = s.get('batting',{})
+        pit = s.get('pitching',{})
+        sp  = s.get('sp',{})
+        if bat: lines += [f"  {k}: {v}" for k,v in bat.items()]
+        if pit: lines += [f"  Staff {k}: {v}" for k,v in pit.items()]
+        if sp:  lines.append(f"  SP ({sp.get('Name','')}): ERA {sp.get('ERA','?')}, WHIP {sp.get('WHIP','?')}")
         return "\n".join(lines)
 
     odds_str = ""
     if odds:
-        bk = odds.get('bookmaker','Sportsbook')
-        hml = odds.get('home_ml'); aml = odds.get('away_ml')
-        if hml: odds_str = f"LIVE ODDS ({bk}): Home ML {hml:+d} | Away ML {aml:+d} | Spread: {odds.get('home_spread','N/A')} / {odds.get('away_spread','N/A')} | Total: {odds.get('over','N/A')} / {odds.get('under','N/A')}"
+        bk   = odds.get('bookmaker','Sportsbook')
+        hml  = odds.get('home_ml')
+        aml  = odds.get('away_ml')
+        if hml:
+            odds_str = (f"LIVE ODDS ({bk}): "
+                        f"Home ML {hml:+d} | Away ML {aml:+d} | "
+                        f"Spread: {odds.get('home_spread','N/A')} / {odds.get('away_spread','N/A')} | "
+                        f"Total: {odds.get('over','N/A')} / {odds.get('under','N/A')}")
 
-    prompt = f"""You are a sharp MLB betting analyst. Analyze this matchup and return ONLY valid JSON.
+    prompt = f"""You are a sharp MLB betting analyst. Analyze this matchup and return ONLY valid JSON, no markdown fences.
 
 BET TYPE: {bet}
 HOME: {home} (SP: {hpit or 'Unknown'})
@@ -277,29 +320,42 @@ AWAY: {away} (SP: {apit or 'Unknown'})
 DATE: {date}
 {odds_str}
 
-{fmt_stats(stats.get('home',{{}}), 'HOME STATS')}
+{fmt_stats(stats.get('home',{}), 'HOME STATS')}
 
-{fmt_stats(stats.get('away',{{}}), 'AWAY STATS')}
+{fmt_stats(stats.get('away',{}), 'AWAY STATS')}
 
-Return ONLY this JSON, no markdown:
+Return ONLY this JSON structure:
 {{"pick":"<team or OVER/UNDER X.X>","betLabel":"<e.g. MONEYLINE PICK>","winProbability":<51-85>,"confidence":"<HIGH|MEDIUM|LOW>","pickSub":"<one short line>","analysis":"<4-5 sharp sentences referencing specific stats and odds>","homeStats":[{{"label":"Record","value":"<>","better":false}},{{"label":"Team ERA","value":"<>","better":false}},{{"label":"Team BA","value":"<>","better":false}},{{"label":"Runs","value":"<>","better":false}},{{"label":"SP ERA","value":"<>","better":false}},{{"label":"SP WHIP","value":"<>","better":false}}],"awayStats":[{{"label":"Record","value":"<>","better":false}},{{"label":"Team ERA","value":"<>","better":false}},{{"label":"Team BA","value":"<>","better":false}},{{"label":"Runs","value":"<>","better":false}},{{"label":"SP ERA","value":"<>","better":false}},{{"label":"SP WHIP","value":"<>","better":false}}],"leans":{{"ml":{{"pick":"<ABBR or PASS>","class":"<go|pass|fade>","note":"<short>"}},"rl":{{"pick":"<e.g. ATL -1.5 or PASS>","class":"<go|pass|fade>","note":"<short>"}},"ou":{{"pick":"<OVER|UNDER|PASS>","class":"<go|pass|fade>","note":"<short>"}}}},"valueAngles":[{{"tag":"<EDGE|PASS|FADE>","text":"<specific angle with price targets>"}},{{"tag":"<EDGE|PASS|FADE>","text":"<second angle>"}},{{"tag":"<EDGE|PASS|FADE>","text":"<third angle>"}}]}}
 
-Set "better":true on whichever team has the better value per stat (lower ERA = better, higher BA/runs = better)."""
+Set better:true on whichever team has the better value per stat (lower ERA=better, higher BA/runs=better)."""
 
     try:
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"Content-Type":"application/json","x-api-key": ANTHROPIC_KEY,"anthropic-version":"2023-06-01"},
-            json={"model":"claude-sonnet-4-20250514","max_tokens":1500,"messages":[{"role":"user","content":prompt}]},
-            timeout=30)
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Content-Type":      "application/json",
+                "x-api-key":         ANTHROPIC_KEY,
+                "anthropic-version": "2023-06-01",
+            },
+            json={
+                "model":      "claude-sonnet-4-20250514",
+                "max_tokens": 1500,
+                "messages":   [{"role": "user", "content": prompt}],
+            },
+            timeout=45,
+        )
         if r.status_code != 200:
-            return jsonify({"error": f"Anthropic API error {r.status_code}"}), 500
+            return jsonify({"error": f"Anthropic {r.status_code}: {r.text[:300]}"}), 500
+
         text = "".join(c.get("text","") for c in r.json().get("content",[]))
-        m = __import__("re").search(r"\{[\s\S]*\}", text)
-        if not m: return jsonify({"error":"No JSON in response"}), 500
+        m = re.search(r"\{[\s\S]*\}", text)
+        if not m:
+            return jsonify({"error": "No JSON found in AI response", "raw": text[:300]}), 500
         return jsonify(json.loads(m.group()))
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False)
