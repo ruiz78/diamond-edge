@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request, send_from_directory
 import requests, os, warnings, json, re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import pandas as pd
 
 warnings.filterwarnings("ignore")
@@ -12,7 +12,7 @@ try:
 except Exception:
     PYBASEBALL_OK = False
 
-app = Flask(__name__, static_folder="static")
+app = Flask(__name__, static_folder="Static")
 
 ODDS_API_KEY  = os.environ.get("ODDS_API_KEY",  "5a5e898df52b4c54e1535b5ee8db8a4b")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -152,7 +152,6 @@ def get_odds(home, away):
             "markets": "h2h,spreads,totals", "oddsFormat": "american"
         }, timeout=10)
         if r.status_code != 200:
-            print(f"Odds API error: {r.status_code} {r.text[:200]}")
             return {}
         games = r.json()
         def match(n, team):
@@ -182,11 +181,11 @@ def get_odds(home, away):
         print(f"Odds error: {e}")
         return {}
 
-# ── Routes ──────────────────────────────────────────────────────────────────
+# ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
-    return send_from_directory("static", "index.html")
+    return send_from_directory("Static", "index.html")
 
 @app.route("/api/health")
 def health():
@@ -195,52 +194,74 @@ def health():
         "anthropic_key_set": bool(ANTHROPIC_KEY),
         "odds_key": ODDS_API_KEY[:8] + "...",
         "pybaseball": PYBASEBALL_OK,
+        "time_utc": datetime.now(timezone.utc).isoformat(),
     })
 
 @app.route("/api/games")
 def api_games():
     try:
-        r = requests.get("https://api.the-odds-api.com/v4/sports/baseball_mlb/odds", params={
-            "apiKey": ODDS_API_KEY, "regions": "us",
-            "markets": "h2h", "oddsFormat": "american"
-        }, timeout=10)
-        print(f"Odds API status: {r.status_code}, remaining: {r.headers.get('x-requests-remaining','?')}")
+        # Pull ALL upcoming MLB games (not filtered by date — let client decide)
+        r = requests.get(
+            "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds",
+            params={
+                "apiKey":      ODDS_API_KEY,
+                "regions":     "us",
+                "markets":     "h2h",
+                "oddsFormat":  "american",
+                "daysFrom":    1,          # only games starting within next 24 hours
+            },
+            timeout=10,
+        )
+        print(f"Odds API /games: status={r.status_code} remaining={r.headers.get('x-requests-remaining','?')}")
         if r.status_code != 200:
-            print(f"Odds API body: {r.text[:300]}")
-            return jsonify([])
-        data = r.json()
-        games = []
-        for g in data:
-            ct = g.get("commence_time","")
-            # parse time to ET
-            try:
-                from datetime import timezone, timedelta
-                dt = datetime.strptime(ct, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                et = dt.astimezone(timezone(timedelta(hours=-4)))
-                time_str = et.strftime("%-I:%M %p ET")
-            except:
-                time_str = ct[11:16] + " UTC" if ct else "TBD"
+            print(f"Odds API error body: {r.text[:400]}")
+            return jsonify({"error": f"Odds API {r.status_code}", "body": r.text[:200]}), 500
 
-            # get moneyline from first bookmaker
+        data = r.json()
+        print(f"Games returned: {len(data)}")
+
+        games = []
+        et_tz = timezone(timedelta(hours=-4))  # EDT
+
+        for g in data:
+            ct = g.get("commence_time", "")
+            try:
+                dt_utc = datetime.strptime(ct, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                dt_et  = dt_utc.astimezone(et_tz)
+                time_str = dt_et.strftime("%-I:%M %p ET")
+                date_str = dt_et.strftime("%b %-d")
+            except Exception as e:
+                print(f"Time parse error: {e}")
+                time_str = ct[11:16] + " UTC" if ct else "TBD"
+                date_str = ct[:10] if ct else ""
+
+            # grab moneyline from first available bookmaker
             ml_home = ml_away = None
-            for bk in g.get("bookmakers", [])[:1]:
+            for bk in g.get("bookmakers", [])[:2]:
                 for mkt in bk.get("markets", []):
                     if mkt["key"] == "h2h":
                         for o in mkt["outcomes"]:
-                            if o["name"] == g["home_team"]: ml_home = o["price"]
+                            if o["name"] == g["home_team"]:  ml_home = o["price"]
                             elif o["name"] == g["away_team"]: ml_away = o["price"]
+                if ml_home: break
 
             games.append({
                 "id":      g["id"],
                 "home":    g["home_team"],
                 "away":    g["away_team"],
                 "time":    time_str,
-                "ml_home": f"{ml_home:+d}" if ml_home else "",
-                "ml_away": f"{ml_away:+d}" if ml_away else "",
+                "date":    date_str,
+                "ml_home": f"{ml_home:+d}" if ml_home else "—",
+                "ml_away": f"{ml_away:+d}" if ml_away else "—",
             })
+
+        # sort by game time
+        games.sort(key=lambda x: x["time"])
         return jsonify(games)
+
     except Exception as e:
-        print(f"Games error: {e}")
+        print(f"Games route error: {e}")
+        import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/stats")
@@ -253,10 +274,9 @@ def api_stats():
 
     home_abbr, home_kw = TEAM_MAP.get(home, ("",""))
     away_abbr, away_kw = TEAM_MAP.get(away, ("",""))
-
     bat_df, pit_df = get_bref_data(year)
 
-    data = {
+    return jsonify({
         "home": {
             "name": home, "abbr": home_abbr,
             "record":   get_record(home_abbr, year),
@@ -272,47 +292,39 @@ def api_stats():
             "sp":       pitcher_stats(apit, pit_df),
         },
         "odds": get_odds(home, away),
-    }
-    return jsonify(data)
+    })
 
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
     if not ANTHROPIC_KEY:
         return jsonify({"error": "ANTHROPIC_API_KEY not set in Railway environment variables"}), 500
 
-    body    = request.json or {}
-    home    = body.get("home","")
-    away    = body.get("away","")
-    bet     = body.get("betType","Moneyline (Winner)")
-    date    = body.get("date", str(datetime.today().date()))
-    hpit    = body.get("homePitcher","")
-    apit    = body.get("awayPitcher","")
-    stats   = body.get("stats", {})
-    odds    = body.get("odds", {})
+    body  = request.json or {}
+    home  = body.get("home","")
+    away  = body.get("away","")
+    bet   = body.get("betType","Moneyline (Winner)")
+    date  = body.get("date", str(datetime.today().date()))
+    hpit  = body.get("homePitcher","")
+    apit  = body.get("awayPitcher","")
+    stats = body.get("stats", {})
+    odds  = body.get("odds", {})
 
     def fmt_stats(s, name):
-        lines = [f"{name}:"]
-        lines.append(f"  Record: {s.get('record','N/A')}")
-        bat = s.get('batting',{})
-        pit = s.get('pitching',{})
-        sp  = s.get('sp',{})
-        if bat: lines += [f"  {k}: {v}" for k,v in bat.items()]
-        if pit: lines += [f"  Staff {k}: {v}" for k,v in pit.items()]
-        if sp:  lines.append(f"  SP ({sp.get('Name','')}): ERA {sp.get('ERA','?')}, WHIP {sp.get('WHIP','?')}")
+        lines = [f"{name}:  Record: {s.get('record','N/A')}"]
+        for k,v in s.get('batting',{}).items():  lines.append(f"  {k}: {v}")
+        for k,v in s.get('pitching',{}).items(): lines.append(f"  Staff {k}: {v}")
+        sp = s.get('sp',{})
+        if sp: lines.append(f"  SP ({sp.get('Name','')}): ERA {sp.get('ERA','?')} WHIP {sp.get('WHIP','?')}")
         return "\n".join(lines)
 
     odds_str = ""
-    if odds:
-        bk   = odds.get('bookmaker','Sportsbook')
-        hml  = odds.get('home_ml')
-        aml  = odds.get('away_ml')
-        if hml:
-            odds_str = (f"LIVE ODDS ({bk}): "
-                        f"Home ML {hml:+d} | Away ML {aml:+d} | "
-                        f"Spread: {odds.get('home_spread','N/A')} / {odds.get('away_spread','N/A')} | "
-                        f"Total: {odds.get('over','N/A')} / {odds.get('under','N/A')}")
+    if odds.get("home_ml"):
+        odds_str = (f"LIVE ODDS ({odds.get('bookmaker','Sportsbook')}): "
+                    f"Home ML {odds['home_ml']:+d} | Away ML {odds.get('away_ml',0):+d} | "
+                    f"Spread: {odds.get('home_spread','N/A')} / {odds.get('away_spread','N/A')} | "
+                    f"Total: {odds.get('over','N/A')} / {odds.get('under','N/A')}")
 
-    prompt = f"""You are a sharp MLB betting analyst. Analyze this matchup and return ONLY valid JSON, no markdown fences.
+    prompt = f"""You are a sharp MLB betting analyst. Analyze this matchup and return ONLY valid JSON, no markdown.
 
 BET TYPE: {bet}
 HOME: {home} (SP: {hpit or 'Unknown'})
@@ -320,14 +332,13 @@ AWAY: {away} (SP: {apit or 'Unknown'})
 DATE: {date}
 {odds_str}
 
-{fmt_stats(stats.get('home',{}), 'HOME STATS')}
+{fmt_stats(stats.get('home',{}), 'HOME')}
+{fmt_stats(stats.get('away',{}), 'AWAY')}
 
-{fmt_stats(stats.get('away',{}), 'AWAY STATS')}
-
-Return ONLY this JSON structure:
+Return ONLY this JSON:
 {{"pick":"<team or OVER/UNDER X.X>","betLabel":"<e.g. MONEYLINE PICK>","winProbability":<51-85>,"confidence":"<HIGH|MEDIUM|LOW>","pickSub":"<one short line>","analysis":"<4-5 sharp sentences referencing specific stats and odds>","homeStats":[{{"label":"Record","value":"<>","better":false}},{{"label":"Team ERA","value":"<>","better":false}},{{"label":"Team BA","value":"<>","better":false}},{{"label":"Runs","value":"<>","better":false}},{{"label":"SP ERA","value":"<>","better":false}},{{"label":"SP WHIP","value":"<>","better":false}}],"awayStats":[{{"label":"Record","value":"<>","better":false}},{{"label":"Team ERA","value":"<>","better":false}},{{"label":"Team BA","value":"<>","better":false}},{{"label":"Runs","value":"<>","better":false}},{{"label":"SP ERA","value":"<>","better":false}},{{"label":"SP WHIP","value":"<>","better":false}}],"leans":{{"ml":{{"pick":"<ABBR or PASS>","class":"<go|pass|fade>","note":"<short>"}},"rl":{{"pick":"<e.g. ATL -1.5 or PASS>","class":"<go|pass|fade>","note":"<short>"}},"ou":{{"pick":"<OVER|UNDER|PASS>","class":"<go|pass|fade>","note":"<short>"}}}},"valueAngles":[{{"tag":"<EDGE|PASS|FADE>","text":"<specific angle with price targets>"}},{{"tag":"<EDGE|PASS|FADE>","text":"<second angle>"}},{{"tag":"<EDGE|PASS|FADE>","text":"<third angle>"}}]}}
 
-Set better:true on whichever team has the better value per stat (lower ERA=better, higher BA/runs=better)."""
+Set better:true on whichever team has the better value per stat."""
 
     try:
         r = requests.post(
@@ -338,21 +349,19 @@ Set better:true on whichever team has the better value per stat (lower ERA=bette
                 "anthropic-version": "2023-06-01",
             },
             json={
-                "model":      "claude-sonnet-4-6",
+                "model":    "claude-sonnet-4-6",
                 "max_tokens": 1500,
-                "messages":   [{"role": "user", "content": prompt}],
+                "messages": [{"role": "user", "content": prompt}],
             },
             timeout=45,
         )
         if r.status_code != 200:
             return jsonify({"error": f"Anthropic {r.status_code}: {r.text[:300]}"}), 500
-
         text = "".join(c.get("text","") for c in r.json().get("content",[]))
         m = re.search(r"\{[\s\S]*\}", text)
         if not m:
-            return jsonify({"error": "No JSON found in AI response", "raw": text[:300]}), 500
+            return jsonify({"error": "No JSON in AI response", "raw": text[:300]}), 500
         return jsonify(json.loads(m.group()))
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
