@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Diamond Edge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --red:#E24B4A;--red-bg:#FCEBEB;--red-dark:#A32D2D;
+  --green:#1D9E75;--green-bg:#EAF3DE;--green-dark:#3B6D11;
+  --amber-bg:#FAEEDA;--amber-dark:#854F0B;
+  --bg:#0f0f0f;--bg2:#1a1a1a;--bg3:#242424;--bg4:#2e2e2e;
+  --border:#333;--border2:#444;
+  --text:#f0f0f0;--text2:#aaa;--text3:#666;
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'IBM Plex Sans',sans-serif;
+  --display:'Bebas Neue',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;padding-bottom:60px}
+.app{max-width:480px;margin:0 auto;padding:16px}
+
+.hdr{display:flex;align-items:center;gap:10px;padding:16px 0 12px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.logo{font-family:var(--display);font-size:28px;letter-spacing:2px;color:var(--text)}
+.bx{font-family:var(--mono);font-size:9px;font-weight:500;padding:3px 7px;border-radius:4px;letter-spacing:1px}
+.bx-red{background:var(--red);color:var(--red-bg)}
+.bx-green{background:var(--green);color:var(--green-bg)}
+
+.slabel{font-family:var(--mono);font-size:10px;font-weight:500;color:var(--text2);letter-spacing:2px;margin-bottom:8px;display:block}
+
+.tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.tab{font-family:var(--mono);font-size:10px;letter-spacing:1px;padding:5px 11px;border:1px solid var(--border2);border-radius:100px;background:transparent;color:var(--text2);cursor:pointer;transition:all .15s}
+.tab.on{background:var(--red);color:#fff;border-color:var(--red)}
+
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.ig{display:flex;flex-direction:column;gap:5px}
+.ig label{font-size:10px;color:var(--text2);font-family:var(--mono);letter-spacing:.5px}
+.ig select,.ig input{font-family:var(--sans);font-size:14px;padding:9px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);width:100%;appearance:none;-webkit-appearance:none}
+.ig select:focus,.ig input:focus{outline:none;border-color:var(--red)}
+
+.games-list{margin-bottom:12px}
+.game-item{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;transition:border-color .15s}
+.game-item:hover,.game-item.sel{border-color:var(--red)}
+.game-item.sel{background:var(--bg4)}
+.gteams{font-size:13px;font-weight:500}
+.gtime{font-family:var(--mono);font-size:11px;color:var(--text2)}
+.gml{font-family:var(--mono);font-size:11px;color:var(--text3)}
+
+.abtn{width:100%;padding:14px;background:var(--red);color:#fff;border:none;border-radius:10px;font-family:var(--display);font-size:22px;letter-spacing:2px;cursor:pointer;margin-bottom:16px;transition:opacity .15s}
+.abtn:hover{opacity:.88}
+.abtn:disabled{opacity:.4;cursor:not-allowed}
+
+.spinner-wrap{display:none;flex-direction:column;align-items:center;gap:12px;padding:32px 0}
+.spinner{width:36px;height:36px;border:3px solid var(--border2);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin-label{font-family:var(--mono);font-size:12px;color:var(--text2);letter-spacing:1px}
+
+.result{display:none}
+
+.pick-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
+.pick-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.pick-label{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;color:var(--text2);margin-bottom:4px}
+.pick-team{font-family:var(--display);font-size:28px;letter-spacing:1px;line-height:1;color:var(--text)}
+.pick-sub{font-size:12px;color:var(--text2);margin-top:4px}
+.conf-pill{font-family:var(--mono);font-size:11px;font-weight:500;padding:5px 12px;border-radius:100px;white-space:nowrap}
+.conf-HIGH{background:var(--green-bg);color:var(--green-dark)}
+.conf-MEDIUM{background:var(--amber-bg);color:var(--amber-dark)}
+.conf-LOW{background:var(--red-bg);color:var(--red-dark)}
+.winprob{font-family:var(--mono);font-size:10px;color:var(--text2);margin-top:4px;text-align:right}
+.analysis{font-size:13px;line-height:1.75;color:var(--text)}
+
+.section-title{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;color:var(--text2);margin-bottom:10px}
+
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
+.team-col{background:var(--bg3);border-radius:8px;padding:10px}
+.team-col.winner{background:#1a2e1a;border:1px solid #2a5a2a}
+.team-col-name{font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--text2);margin-bottom:8px}
+.team-col-name.winner{color:var(--green)}
+.stat-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px}
+.stat-row:last-child{border-bottom:none}
+.stat-row .lbl{color:var(--text2)}
+.stat-row .val{font-family:var(--mono);font-weight:500}
+.stat-row .better{color:var(--green)}
+.stat-row .worse{color:var(--red-dark)}
+
+.lean-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.lean-box{background:var(--bg3);border-radius:8px;padding:10px;text-align:center}
+.lean-type{font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--text2);margin-bottom:5px}
+.lean-pick{font-family:var(--display);font-size:15px;letter-spacing:.5px;margin-bottom:3px}
+.lean-pick.go{color:var(--green)}.lean-pick.pass{color:var(--amber-dark)}.lean-pick.fade{color:var(--red)}
+.lean-note{font-size:10px;color:var(--text2);line-height:1.4}
+
+.value-list{list-style:none}
+.value-item{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;line-height:1.5;align-items:flex-start}
+.value-item:last-child{border-bottom:none}
+.vtag{font-family:var(--mono);font-size:9px;font-weight:500;padding:2px 6px;border-radius:4px;letter-spacing:.5px;white-space:nowrap;margin-top:1px}
+.tag-EDGE{background:var(--green-bg);color:var(--green-dark)}
+.tag-PASS{background:var(--amber-bg);color:var(--amber-dark)}
+.tag-FADE{background:var(--red-bg);color:var(--red-dark)}
+
+.odds-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
+.odds-row:last-child{border-bottom:none}
+.odds-lbl{color:var(--text2)}
+.odds-val{font-family:var(--mono);font-weight:500}
+.fav{color:var(--green)}.dog{color:var(--red)}
+
+.disc{font-size:10px;color:var(--text3);margin-top:16px;line-height:1.6;font-family:var(--mono);padding:10px;border:1px solid var(--border);border-radius:8px;text-align:center}
+
+.mode-toggle{display:flex;gap:8px;margin-bottom:14px}
+.mode-btn{flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text2);font-family:var(--mono);font-size:11px;cursor:pointer;letter-spacing:.5px;transition:all .15s}
+.mode-btn.on{background:var(--bg3);border-color:var(--border2);color:var(--text)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="hdr">
+    <span class="logo">Diamond Edge</span>
+    <span class="bx bx-red">MLB AI</span>
+    <span class="bx bx-green">LIVE ODDS</span>
+  </div>
+
+  <span class="slabel">Mode</span>
+  <div class="mode-toggle">
+    <button class="mode-btn on" id="modeTonight" onclick="setMode('tonight')">Tonight's Games</button>
+    <button class="mode-btn" id="modeCustom" onclick="setMode('custom')">Custom Matchup</button>
+  </div>
+
+  <div id="tonightSection">
+    <span class="slabel">Select a game</span>
+    <div class="games-list" id="gamesList">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--text2);padding:12px 0">Loading tonight's games...</div>
+    </div>
+  </div>
+
+  <div id="customSection" style="display:none">
+    <div class="g2">
+      <div class="ig"><label>HOME TEAM</label>
+        <select id="homeSelect">
+          <option value="">Select...</option>
+          <option>Arizona Diamondbacks</option><option>Atlanta Braves</option>
+          <option>Baltimore Orioles</option><option>Boston Red Sox</option>
+          <option>Chicago Cubs</option><option>Chicago White Sox</option>
+          <option>Cincinnati Reds</option><option>Cleveland Guardians</option>
+          <option>Colorado Rockies</option><option>Detroit Tigers</option>
+          <option>Houston Astros</option><option>Kansas City Royals</option>
+          <option>Los Angeles Angels</option><option>Los Angeles Dodgers</option>
+          <option>Miami Marlins</option><option>Milwaukee Brewers</option>
+          <option>Minnesota Twins</option><option>New York Mets</option>
+          <option>New York Yankees</option><option>Athletics</option>
+          <option>Philadelphia Phillies</option><option>Pittsburgh Pirates</option>
+          <option>San Diego Padres</option><option>San Francisco Giants</option>
+          <option>Seattle Mariners</option><option>St. Louis Cardinals</option>
+          <option>Tampa Bay Rays</option><option>Texas Rangers</option>
+          <option>Toronto Blue Jays</option><option>Washington Nationals</option>
+        </select>
+      </div>
+      <div class="ig"><label>AWAY TEAM</label>
+        <select id="awaySelect">
+          <option value="">Select...</option>
+          <option>Arizona Diamondbacks</option><option>Atlanta Braves</option>
+          <option>Baltimore Orioles</option><option>Boston Red Sox</option>
+          <option>Chicago Cubs</option><option>Chicago White Sox</option>
+          <option>Cincinnati Reds</option><option>Cleveland Guardians</option>
+          <option>Colorado Rockies</option><option>Detroit Tigers</option>
+          <option>Houston Astros</option><option>Kansas City Royals</option>
+          <option>Los Angeles Angels</option><option>Los Angeles Dodgers</option>
+          <option>Miami Marlins</option><option>Milwaukee Brewers</option>
+          <option>Minnesota Twins</option><option>New York Mets</option>
+          <option>New York Yankees</option><option>Athletics</option>
+          <option>Philadelphia Phillies</option><option>Pittsburgh Pirates</option>
+          <option>San Diego Padres</option><option>San Francisco Giants</option>
+          <option>Seattle Mariners</option><option>St. Louis Cardinals</option>
+          <option>Tampa Bay Rays</option><option>Texas Rangers</option>
+          <option>Toronto Blue Jays</option><option>Washington Nationals</option>
+        </select>
+      </div>
+      <div class="ig"><label>HOME PITCHER</label><input type="text" id="hpitInput" placeholder="e.g. Gerrit Cole"></div>
+      <div class="ig"><label>AWAY PITCHER</label><input type="text" id="apitInput" placeholder="e.g. Sandy Alcantara"></div>
+    </div>
+  </div>
+
+  <span class="slabel">Bet type</span>
+  <div class="tabs" style="margin-bottom:14px">
+    <button class="tab on" onclick="selTab(this,'Moneyline (Winner)')">ML</button>
+    <button class="tab" onclick="selTab(this,'Run Line / Spread')">RL</button>
+    <button class="tab" onclick="selTab(this,'Over/Under')">O/U</button>
+    <button class="tab" onclick="selTab(this,'Player Props')">PROPS</button>
+  </div>
+
+  <button class="abtn" id="analyzeBtn" onclick="analyze()">ANALYZE MATCHUP</button>
+
+  <div class="spinner-wrap" id="spinnerWrap">
+    <div class="spinner"></div>
+    <div class="spin-label" id="spinLabel">FETCHING LIVE STATS...</div>
+  </div>
+
+  <div class="result" id="resultDiv">
+    <div class="pick-card">
+      <div class="pick-top">
+        <div>
+          <div class="pick-label" id="rBetLabel">MONEYLINE PICK</div>
+          <div class="pick-team" id="rPick">—</div>
+          <div class="pick-sub" id="rSub"></div>
+        </div>
+        <div style="text-align:right">
+          <div class="conf-pill" id="rConf">—</div>
+          <div class="winprob" id="rProb"></div>
+        </div>
+      </div>
+      <div class="analysis" id="rAnalysis"></div>
+    </div>
+
+    <div class="card" id="oddsCard" style="display:none">
+      <div class="section-title">LIVE ODDS</div>
+      <div id="oddsContent"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">TEAM COMPARISON</div>
+      <div class="compare-grid">
+        <div class="team-col" id="homeCol">
+          <div class="team-col-name" id="homeColName">HOME</div>
+          <div id="homeStatsEl"></div>
+        </div>
+        <div class="team-col" id="awayCol">
+          <div class="team-col-name" id="awayColName">AWAY</div>
+          <div id="awayStatsEl"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">BETTING LEANS</div>
+      <div class="lean-grid">
+        <div class="lean-box"><div class="lean-type">MONEYLINE</div><div class="lean-pick" id="lML">—</div><div class="lean-note" id="lMLn"></div></div>
+        <div class="lean-box"><div class="lean-type">RUN LINE</div><div class="lean-pick" id="lRL">—</div><div class="lean-note" id="lRLn"></div></div>
+        <div class="lean-box"><div class="lean-type">OVER/UNDER</div><div class="lean-pick" id="lOU">—</div><div class="lean-note" id="lOUn"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">VALUE ANGLES</div>
+      <ul class="value-list" id="valueList"></ul>
+    </div>
+  </div>
+
+  <div class="disc">For entertainment only. Sports betting involves financial risk. Please gamble responsibly.</div>
+</div>
+
+<script>
+let betType = 'Moneyline (Winner)';
+let mode = 'tonight';
+let selectedGame = null;
+let tonightGames = [];
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('modeTonight').classList.toggle('on', m==='tonight');
+  document.getElementById('modeCustom').classList.toggle('on', m==='custom');
+  document.getElementById('tonightSection').style.display = m==='tonight' ? '' : 'none';
+  document.getElementById('customSection').style.display = m==='custom' ? '' : 'none';
+}
+
+function selTab(btn, t) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  betType = t;
+}
+
+async function loadGames() {
+  try {
+    const r = await fetch('/api/games');
+    tonightGames = await r.json();
+    const list = document.getElementById('gamesList');
+    if (!tonightGames.length) {
+      list.innerHTML = '<div style="font-family:var(--mono);font-size:12px;color:var(--text2);padding:12px 0">No games found for today.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    tonightGames.forEach((g, i) => {
+      const div = document.createElement('div');
+      div.className = 'game-item';
+      div.innerHTML = `<div><div class="gteams">${g.away} <span style="color:var(--text3)">@</span> ${g.home}</div><div class="gtime">${g.time}</div></div>`;
+      div.onclick = () => {
+        document.querySelectorAll('.game-item').forEach(x => x.classList.remove('sel'));
+        div.classList.add('sel');
+        selectedGame = g;
+      };
+      list.appendChild(div);
+    });
+  } catch(e) {
+    document.getElementById('gamesList').innerHTML = '<div style="color:var(--red);font-size:12px;font-family:var(--mono);padding:12px 0">Failed to load games. Check connection.</div>';
+  }
+}
+
+function setSpinner(show, label) {
+  document.getElementById('spinnerWrap').style.display = show ? 'flex' : 'none';
+  if (label) document.getElementById('spinLabel').textContent = label;
+}
+
+async function analyze() {
+  let home, away, hpit, apit;
+  if (mode === 'tonight') {
+    if (!selectedGame) { alert('Please select a game first.'); return; }
+    home = selectedGame.home;
+    away = selectedGame.away;
+    hpit = ''; apit = '';
+  } else {
+    home = document.getElementById('homeSelect').value;
+    away = document.getElementById('awaySelect').value;
+    hpit = document.getElementById('hpitInput').value;
+    apit = document.getElementById('apitInput').value;
+    if (!home || !away) { alert('Please select both teams.'); return; }
+    if (home === away) { alert('Teams must be different.'); return; }
+  }
+
+  document.getElementById('analyzeBtn').disabled = true;
+  document.getElementById('resultDiv').style.display = 'none';
+  setSpinner(true, 'FETCHING LIVE STATS...');
+
+  try {
+    const statsResp = await fetch(`/api/stats?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}&hpit=${encodeURIComponent(hpit)}&apit=${encodeURIComponent(apit)}`);
+    const stats = await statsResp.json();
+
+    setSpinner(true, 'RUNNING AI ANALYSIS...');
+
+    const predResp = await fetch('/api/predict', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        home, away, betType,
+        date: new Date().toISOString().split('T')[0],
+        homePitcher: hpit || stats.home?.sp?.Name || '',
+        awayPitcher: apit || stats.away?.sp?.Name || '',
+        stats, odds: stats.odds || {}
+      })
+    });
+    const pred = await predResp.json();
+    if (pred.error) throw new Error(pred.error);
+
+    renderResult(pred, stats, home, away);
+  } catch(e) {
+    setSpinner(false);
+    alert('Error: ' + e.message);
+  }
+  document.getElementById('analyzeBtn').disabled = false;
+}
+
+function renderResult(r, stats, home, away) {
+  setSpinner(false);
+  document.getElementById('resultDiv').style.display = 'block';
+  window.scrollTo({top: document.getElementById('resultDiv').offsetTop - 16, behavior:'smooth'});
+
+  document.getElementById('rBetLabel').textContent = r.betLabel || 'PICK';
+  document.getElementById('rPick').textContent = r.pick || '—';
+  document.getElementById('rSub').textContent = r.pickSub || '';
+  document.getElementById('rAnalysis').textContent = r.analysis || '';
+  document.getElementById('rProb').textContent = (r.winProbability || '—') + '% win probability';
+
+  const conf = (r.confidence || 'MEDIUM').toUpperCase();
+  const pill = document.getElementById('rConf');
+  pill.textContent = conf + ' CONFIDENCE';
+  pill.className = 'conf-pill conf-' + conf;
+
+  const odds = stats.odds || {};
+  if (odds.home_ml || odds.over) {
+    document.getElementById('oddsCard').style.display = 'block';
+    const bk = odds.bookmaker || 'Sportsbook';
+    let html = `<div style="font-family:var(--mono);font-size:10px;color:var(--text2);margin-bottom:8px;letter-spacing:1px">${bk.toUpperCase()}</div>`;
+    if (odds.home_ml) {
+      const hfav = odds.home_ml < odds.away_ml;
+      html += `<div class="odds-row"><span class="odds-lbl">${home.split(' ').pop()} ML</span><span class="odds-val ${hfav?'fav':'dog'}">${odds.home_ml>0?'+':''}${odds.home_ml}</span></div>`;
+      html += `<div class="odds-row"><span class="odds-lbl">${away.split(' ').pop()} ML</span><span class="odds-val ${!hfav?'fav':'dog'}">${odds.away_ml>0?'+':''}${odds.away_ml}</span></div>`;
+    }
+    if (odds.home_spread) html += `<div class="odds-row"><span class="odds-lbl">Run Line</span><span class="odds-val">${odds.home_spread} / ${odds.away_spread}</span></div>`;
+    if (odds.over) html += `<div class="odds-row"><span class="odds-lbl">Total</span><span class="odds-val">${odds.over} / ${odds.under}</span></div>`;
+    document.getElementById('oddsContent').innerHTML = html;
+  }
+
+  const hWin = r.pick && home.split(' ').some(w => r.pick.toLowerCase().includes(w.toLowerCase()));
+  document.getElementById('homeColName').textContent = home.split(' ').pop().toUpperCase();
+  document.getElementById('awayColName').textContent = away.split(' ').pop().toUpperCase();
+  if (hWin) { document.getElementById('homeCol').classList.add('winner'); document.getElementById('homeColName').classList.add('winner'); }
+  else       { document.getElementById('awayCol').classList.add('winner'); document.getElementById('awayColName').classList.add('winner'); }
+
+  function renderStats(statArr, elId) {
+    const el = document.getElementById(elId);
+    el.innerHTML = (statArr||[]).map(s =>
+      `<div class="stat-row"><span class="lbl">${s.label}</span><span class="val ${s.better?'better':''}">${s.value}</span></div>`
+    ).join('');
+  }
+  renderStats(r.homeStats, 'homeStatsEl');
+  renderStats(r.awayStats, 'awayStatsEl');
+
+  ['ml','rl','ou'].forEach(k => {
+    const l = r.leans?.[k] || {};
+    const p = document.getElementById('l'+k.toUpperCase()), n = document.getElementById('l'+k.toUpperCase()+'n');
+    if (p) { p.textContent = l.pick||'—'; p.className='lean-pick '+(l.class||''); }
+    if (n) n.textContent = l.note||'';
+  });
+
+  document.getElementById('valueList').innerHTML = (r.valueAngles||[]).map(v =>
+    `<li class="value-item"><span class="vtag tag-${v.tag}">${v.tag}</span><span>${v.text}</span></li>`
+  ).join('');
+}
+
+loadGames();
+</script>
+</body>
+</html>
