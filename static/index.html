@@ -272,28 +272,47 @@ function selTab(btn, t) {
 }
 
 async function loadGames() {
+  const list = document.getElementById('gamesList');
+  list.innerHTML = '<div style="font-family:var(--mono);font-size:12px;color:var(--text2);padding:12px 0">Loading games...</div>';
   try {
     const r = await fetch('/api/games');
-    tonightGames = await r.json();
-    const list = document.getElementById('gamesList');
-    if (!tonightGames.length) {
-      list.innerHTML = '<div style="font-family:var(--mono);font-size:12px;color:var(--text2);padding:12px 0">No games found for today.</div>';
+    const data = await r.json();
+
+    if (data.error) {
+      list.innerHTML = `<div style="color:var(--red);font-size:12px;font-family:var(--mono);padding:12px 0">Error: ${data.error}</div>`;
       return;
     }
+
+    tonightGames = Array.isArray(data) ? data : [];
+
+    if (!tonightGames.length) {
+      list.innerHTML = '<div style="font-family:var(--mono);font-size:12px;color:var(--text2);padding:12px 0">No games with odds available right now. Try Custom Matchup.</div>';
+      return;
+    }
+
     list.innerHTML = '';
-    tonightGames.forEach((g, i) => {
+    tonightGames.forEach((g) => {
       const div = document.createElement('div');
       div.className = 'game-item';
-      div.innerHTML = `<div><div class="gteams">${g.away} <span style="color:var(--text3)">@</span> ${g.home}</div><div class="gtime">${g.time}</div></div>`;
+      div.innerHTML = `
+        <div style="flex:1">
+          <div class="gteams">${g.away} <span style="color:var(--text3)">@</span> ${g.home}</div>
+          <div class="gtime">${g.date ? g.date + ' · ' : ''}${g.time}</div>
+        </div>
+        <div style="text-align:right;min-width:80px">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text2)">${g.ml_away || ''}</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text)">${g.ml_home || ''}</div>
+        </div>`;
       div.onclick = () => {
         document.querySelectorAll('.game-item').forEach(x => x.classList.remove('sel'));
         div.classList.add('sel');
         selectedGame = g;
+        analyze();
       };
       list.appendChild(div);
     });
   } catch(e) {
-    document.getElementById('gamesList').innerHTML = '<div style="color:var(--red);font-size:12px;font-family:var(--mono);padding:12px 0">Failed to load games. Check connection.</div>';
+    list.innerHTML = `<div style="color:var(--red);font-size:12px;font-family:var(--mono);padding:12px 0">Failed to load games: ${e.message}</div>`;
   }
 }
 
