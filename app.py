@@ -20,7 +20,7 @@ except Exception:
 
 app = Flask(__name__, static_folder="static")
 
-ODDS_API_KEY  = "5a5e898df52b4c54e1535b5ee8db8a4b"
+ODDS_API_KEY  = os.environ.get("ODDS_API_KEY", "5a5e898df52b4c54e1535b5ee8db8a4b")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 TEAM_MAP = {
