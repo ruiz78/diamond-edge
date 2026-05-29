@@ -338,7 +338,7 @@ Set better:true on whichever team has the better value per stat (lower ERA=bette
                 "anthropic-version": "2023-06-01",
             },
             json={
-                "model":      "claude-sonnet-4-20250514",
+                "model":      "claude-sonnet-4-6",
                 "max_tokens": 1500,
                 "messages":   [{"role": "user", "content": prompt}],
             },
