@@ -12,7 +12,7 @@ try:
 except Exception:
     PYBASEBALL_OK = False
 
-app = Flask(__name__, static_folder="Static")
+app = Flask(__name__, static_folder="static")
 
 ODDS_API_KEY  = os.environ.get("ODDS_API_KEY",  "5a5e898df52b4c54e1535b5ee8db8a4b")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -185,7 +185,7 @@ def get_odds(home, away):
 
 @app.route("/")
 def index():
-    return send_from_directory("Static", "index.html")
+    return send_from_directory("static", "index.html")
 
 @app.route("/api/health")
 def health():
