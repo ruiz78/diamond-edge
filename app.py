@@ -241,7 +241,7 @@ def api_games():
                             elif o["name"] == g["away_team"]: ml_away = o["price"]
                 if ml_home: break
 
-            games.append({
+          games.append({
                 "id":      g["id"],
                 "home":    g["home_team"],
                 "away":    g["away_team"],
@@ -249,9 +249,10 @@ def api_games():
                 "date":    date_str,
                 "ml_home": f"{ml_home:+d}" if ml_home else "—",
                 "ml_away": f"{ml_away:+d}" if ml_away else "—",
+                "sort_key": ct,
             })
 
-        games.sort(key=lambda x: x["time"])
+        games.sort(key=lambda x: x["sort_key"])
         return jsonify(games)
 
     except Exception as e:
