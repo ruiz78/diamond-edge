@@ -200,48 +200,44 @@ def health():
 @app.route("/api/games")
 def api_games():
     try:
-        # Pull ALL upcoming MLB games (not filtered by date — let client decide)
         r = requests.get(
             "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds",
             params={
-                "apiKey":      ODDS_API_KEY,
-                "regions":     "us",
-                "markets":     "h2h",
-                "oddsFormat":  "american",
-                "daysFrom":    1,          # only games starting within next 24 hours
+                "apiKey":     ODDS_API_KEY,
+                "regions":    "us",
+                "markets":    "h2h",
+                "oddsFormat": "american",
+                "daysFrom":   1,
             },
             timeout=10,
         )
-        print(f"Odds API /games: status={r.status_code} remaining={r.headers.get('x-requests-remaining','?')}")
         if r.status_code != 200:
-            print(f"Odds API error body: {r.text[:400]}")
             return jsonify({"error": f"Odds API {r.status_code}", "body": r.text[:200]}), 500
 
         data = r.json()
-        print(f"Games returned: {len(data)}")
+        et_tz = timezone(timedelta(hours=-4))
+        today_et = datetime.now(et_tz).date()
 
         games = []
-        et_tz = timezone(timedelta(hours=-4))  # EDT
-
         for g in data:
             ct = g.get("commence_time", "")
             try:
                 dt_utc = datetime.strptime(ct, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
                 dt_et  = dt_utc.astimezone(et_tz)
+                if dt_et.date() != today_et:
+                    continue
                 time_str = dt_et.strftime("%-I:%M %p ET")
                 date_str = dt_et.strftime("%b %-d")
-            except Exception as e:
-                print(f"Time parse error: {e}")
+            except:
                 time_str = ct[11:16] + " UTC" if ct else "TBD"
-                date_str = ct[:10] if ct else ""
+                date_str = ""
 
-            # grab moneyline from first available bookmaker
             ml_home = ml_away = None
             for bk in g.get("bookmakers", [])[:2]:
                 for mkt in bk.get("markets", []):
                     if mkt["key"] == "h2h":
                         for o in mkt["outcomes"]:
-                            if o["name"] == g["home_team"]:  ml_home = o["price"]
+                            if o["name"] == g["home_team"]:   ml_home = o["price"]
                             elif o["name"] == g["away_team"]: ml_away = o["price"]
                 if ml_home: break
 
@@ -255,13 +251,10 @@ def api_games():
                 "ml_away": f"{ml_away:+d}" if ml_away else "—",
             })
 
-        # sort by game time
         games.sort(key=lambda x: x["time"])
         return jsonify(games)
 
     except Exception as e:
-        print(f"Games route error: {e}")
-        import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/stats")
